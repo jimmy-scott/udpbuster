@@ -63,16 +63,16 @@ typedef struct stackinfo_t {
 } stackinfo_t;
 
 typedef struct packetinfo_t {
-	pcap_handler handler;
+	int link_type;
 } packetinfo_t;
 
 /* function prototypes */
 static void usage(char *program);
 static struct stackinfo_t *stackinfo_new(void);
-static struct packetinfo_t *packetinfo_new(pcap_handler link_handler);
+static struct packetinfo_t *packetinfo_new(int link_type);
 static pcap_t *setup_capture(char *device, char *filter);
 static int setup_filter(pcap_t *capt, char *device, char *filter);
-static pcap_handler get_link_handler(pcap_t *capt);
+static int check_link_type(pcap_t *capt);
 static int install_sigalrm(pcap_t *capt);
 static void handle_sigalrm(int signo);
 static void handle_packet(u_char *args, const struct pcap_pkthdr *pkthdr, const u_char *packet);
@@ -90,7 +90,7 @@ int
 main(int argc, char **argv)
 {
 	pcap_t *capt;
-	pcap_handler link_handler;
+	int link_type;
 	struct packetinfo_t *packetinfo;
 	
 	/* check usage */
@@ -108,13 +108,12 @@ main(int argc, char **argv)
 	if (install_sigalrm(capt) != 0)
 		return EXIT_FAILURE;
 	
-	/* get link handler based on link type */
-	link_handler = get_link_handler(capt);
-	if (!link_handler)
+	/* check and get link type */
+	if ((link_type = check_link_type(capt)) == -1)
 		return EXIT_FAILURE;
 	
 	/* get packetinfo structure */
-	packetinfo = packetinfo_new(link_handler);
+	packetinfo = packetinfo_new(link_type);
 	
 	/* stop capturing after 10 seconds */
 	alarm(10);
@@ -159,18 +158,17 @@ stackinfo_new(void)
  *
  * The packetinfo structure is used to pass info to the packet handler:
  *
- *  - The packetinfo.handler is a function pointer to the handler that
- *    hould be used to handle the first protocol.
+ *  - The packetinfo.link_type is the datalink type.
  *
  * Returns a pointer to the static packetinfo buffer.
  */
 
 static struct packetinfo_t *
-packetinfo_new(pcap_handler link_handler)
+packetinfo_new(int link_type)
 {
 	static struct packetinfo_t packetinfo;
 	
-	packetinfo.handler = link_handler;
+	packetinfo.link_type = link_type;
 	
 	return &packetinfo;
 }
@@ -241,16 +239,13 @@ setup_filter(pcap_t *capt, char *device, char *filter)
 }
 
 /*
- * Determine handler function for first protocol layer.
+ * Check and return datalink type.
  *
- * This function checks the link type, and returns a pcap_handler
- * function that is able to handle the first protocol of a packet.
- *
- * Returns a pcap_handler or NULL if the protocol is not yet supported.
+ * Returns the link type or -1 if it is not supported.
  */
 
-static pcap_handler
-get_link_handler(pcap_t *capt)
+static int
+check_link_type(pcap_t *capt)
 {
 	int link_type;
 	
@@ -261,25 +256,18 @@ get_link_handler(pcap_t *capt)
 	switch (link_type)
 	{
 	case DLT_EN10MB:
-		printf("Link type: Ethernet\n");
-		return handle_ethernet;
-		break;
 	case DLT_NULL:
-		printf("Link type: BSD loopback\n");
-		return handle_bsd_null;
-		break;
 	case DLT_LOOP:
-		printf("Link type: OpenBSD loopback\n");
-		return handle_bsd_loop;
+		return link_type;
 		break;
 	default:
-		printf("Link type %i not supported\n", link_type);
-		return NULL;
+		fprintf(stderr, "Link type %i not supported\n", link_type);
+		return -1;
 		break;
 	}
 	
 	/* never reached */
-	return NULL;
+	return -1;
 }
 
 /*
@@ -355,7 +343,22 @@ handle_packet(u_char *args, const struct pcap_pkthdr *pkthdr,
 		(unsigned long)pkthdr->caplen);
 	
 	/* handle the first protocol layer */
-	packetinfo->handler((u_char *)stackinfo, pkthdr, packet);
+	switch (packetinfo->link_type)
+	{
+	case DLT_EN10MB:
+		handle_ethernet((u_char *)stackinfo, pkthdr, packet);
+		break;
+	case DLT_NULL:
+	case DLT_LOOP:
+		handle_loopback((u_char *)stackinfo, pkthdr, packet,
+			packetinfo->link_type);
+		break;
+	default:
+		fprintf(stderr, "Link type %i not supported\n",
+			packetinfo->link_type);
+		return;
+		break;
+	}
 	
 	return;
 }
