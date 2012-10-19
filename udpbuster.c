@@ -33,6 +33,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define __FAVOR_BSD
 #include <sys/socket.h>
@@ -115,8 +116,11 @@ main(int argc, char **argv)
 	/* get packetinfo structure */
 	packetinfo = packetinfo_new(link_handler);
 	
-	/* capture and process 10 packets */
-	pcap_loop(capt, 10, handle_packet, (u_char *)packetinfo);
+	/* stop capturing after 10 seconds */
+	alarm(10);
+	
+	/* capture and process packets */
+	pcap_loop(capt, 0, handle_packet, (u_char *)packetinfo);
 	
 	return EXIT_SUCCESS;
 }
