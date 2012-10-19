@@ -220,10 +220,8 @@ setup_filter(pcap_t *capt, char *device, char *filter)
 	char errbuf[PCAP_ERRBUF_SIZE] = "\0";
 	
 	/* get network and netmask of device */
-	if (pcap_lookupnet(device, &network, &netmask, errbuf) == -1) {
-		fprintf(stderr, "WARNING: %s\n", errbuf);
+	if (pcap_lookupnet(device, &network, &netmask, errbuf) == -1)
 		network = PCAP_NETMASK_UNKNOWN;
-	}
 	
 	/* compile the filter expression */
 	if (pcap_compile(capt, &bpfp, filter, 0, network) == -1) {
