@@ -1,7 +1,7 @@
 CC := gcc
 CFLAGS := -pedantic -Wall -std=c99 -O2 -lpcap -D_GNU_SOURCE
 
-PROGS := pcapfun
+PROGS := udpbuster
 
 all: $(PROGS)
 
