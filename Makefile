@@ -5,6 +5,10 @@ LDFLAGS := -lpcap
 PROGS := udpbuster
 OBJECTS := udptable.o
 
+ifdef TEST
+PROGS += udptable-test
+endif
+
 all: $(PROGS)
 
 $(OBJECTS): %.o: %.c %.h
