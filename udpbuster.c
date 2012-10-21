@@ -81,7 +81,6 @@ static void handle_packet(u_char *args, const struct pcap_pkthdr *pkthdr, const 
 static void handle_loopback(u_char *args, const struct pcap_pkthdr *pkthdr, const u_char *packet, int type);
 static void handle_ethernet(u_char *args, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 static void handle_ipv4(u_char *args, const struct pcap_pkthdr *pkthdr, const u_char *packet);
-static void handle_udp(u_char *args, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
 /* for pcap_breakloop in sigalrm */
 pcap_t *alrm_pcap_handle = NULL;
@@ -344,13 +343,6 @@ handle_packet(u_char *args, const struct pcap_pkthdr *pkthdr,
 	/* extract the packetinfo structure */
 	packetinfo = (struct packetinfo_t *)(args);
 	
-	/* print packet info */
-	printf("[pcap] time: %ld.%06ld len: %lu caplen: %lu\n",
-		(long)pkthdr->ts.tv_sec,
-		(long)pkthdr->ts.tv_usec,
-		(unsigned long)pkthdr->len,
-		(unsigned long)pkthdr->caplen);
-	
 	/* handle the first protocol layer */
 	switch (packetinfo->link_type)
 	{
@@ -392,10 +384,8 @@ handle_loopback(u_char *args, const struct pcap_pkthdr *pkthdr,
 	stackinfo = (struct stackinfo_t*)(args);
 	
 	/* check if header was captured completely */
-	if (pkthdr->caplen - stackinfo->offset < BSDLOOP_SIZE) {
-		printf("[eth] header missing or truncated\n");
+	if (pkthdr->caplen - stackinfo->offset < BSDLOOP_SIZE)
 		return;
-	}
 	
 	/* extract link layer header by copying the first 4 bytes of
 	 * the packet and turning it into a 32bit unsigned integer */
@@ -403,14 +393,11 @@ handle_loopback(u_char *args, const struct pcap_pkthdr *pkthdr,
 	{
 	case DLT_NULL:
 		proto = *((uint32_t*)packet);
-		printf("[bsd-null] ");
 		break;
 	case DLT_LOOP:
 		proto = ntohl(*((uint32_t*)packet));
-		printf("[bsd-loop] ");
 		break;
 	default:
-		printf("[loopback] unknown loopback type: %i\n", type);
 		return;
 		break;
 	}
@@ -419,14 +406,10 @@ handle_loopback(u_char *args, const struct pcap_pkthdr *pkthdr,
 	switch (proto)
 	{
 	case PF_INET:
-		printf("proto: ip\n");
 		handle_next = handle_ipv4;
 		break;
-	case PF_INET6:
-		printf("proto: ipv6\n");
-		break;
 	default:
-		printf("proto: ?:%u\n", proto);
+		return;
 		break;
 	}
 	
@@ -434,8 +417,7 @@ handle_loopback(u_char *args, const struct pcap_pkthdr *pkthdr,
 	stackinfo->offset += BSDLOOP_SIZE;
 	
 	/* handle the next layer */
-	if (handle_next)
-		handle_next((u_char *)stackinfo, pkthdr, packet);
+	handle_next((u_char *)stackinfo, pkthdr, packet);
 	
 	return;
 }
@@ -457,38 +439,21 @@ handle_ethernet(u_char *args, const struct pcap_pkthdr *pkthdr,
 	stackinfo = (struct stackinfo_t*)(args);
 	
 	/* check if header was captured completely */
-	if (pkthdr->caplen - stackinfo->offset < ETHER_SIZE) {
-		printf("[eth] header missing or truncated\n");
+	if (pkthdr->caplen - stackinfo->offset < ETHER_SIZE)
 		return;
-	}
 	
 	/* extract ethernet header */
 	eptr = (struct ether_header *)(packet + stackinfo->offset);
 	ether_type = ntohs(eptr->ether_type);
 	
-	printf("[eth] src: %s",
-		ether_ntoa((struct ether_addr *)eptr->ether_shost));
-	printf(" dst: %s ",
-		ether_ntoa((struct ether_addr *)eptr->ether_dhost));
-	
 	/* check packet type */
 	switch (ether_type)
 	{
 	case ETHERTYPE_IP:
-		printf("proto: ip\n");
 		handle_next = handle_ipv4;
 		break;
-	case ETHERTYPE_ARP:
-		printf("proto: arp\n");
-		break;
-	case ETHERTYPE_REVARP:
-		printf("proto: rarp\n");
-		break;
-	case ETHERTYPE_IPV6:
-		printf("proto: ipv6\n");
-		break;
 	default:
-		printf("proto: ?:%u\n", ether_type);
+		return;
 		break;
 	}
 	
@@ -496,8 +461,7 @@ handle_ethernet(u_char *args, const struct pcap_pkthdr *pkthdr,
 	stackinfo->offset += ETHER_SIZE;
 	
 	/* handle the next layer */
-	if (handle_next)
-		handle_next((u_char *)stackinfo, pkthdr, packet);
+	handle_next((u_char *)stackinfo, pkthdr, packet);
 	
 	return;
 }
@@ -512,137 +476,31 @@ handle_ipv4(u_char *args, const struct pcap_pkthdr *pkthdr,
 {
 	struct ip *ip;
 	struct stackinfo_t *stackinfo;
-	uint16_t ip_len, ip_off, offset, ip_hsize;
-	pcap_handler handle_next = NULL;
 	
 	/* extract stackinfo */
 	stackinfo = (struct stackinfo_t*)(args);
 	
 	/* check if header (w/o options) was captured completely */
-	if (pkthdr->caplen - stackinfo->offset < IPV4_SIZE) {
-		printf("[ipv4] header missing or truncated\n");
+	if (pkthdr->caplen - stackinfo->offset < IPV4_SIZE)
 		return;
-	}
 	
 	/* extract ip header (w/o options) */
 	ip = (struct ip *)(packet + stackinfo->offset);
 	
-	/* extract ip fields to host byte order */
-	ip_len = ntohs(ip->ip_len);	/* ip packet length   */
-	ip_off = ntohs(ip->ip_off);	/* ip fragment offset */
-	
 	/* verify ip version */
-	if (ip->ip_v != 4) {
-		printf("[ipv4] invalid version: %d\n", ip->ip_v);
+	if (ip->ip_v != 4)
 		return;
-	}
 	
 	/* verify header length */
-	if (ip->ip_hl < 5) {
-		printf("[ipv4] invalid header length: %d\n", ip->ip_hl);
+	if (ip->ip_hl < 5)
 		return;
-	}
 	
-	/* calculate header length in bytes */
-	ip_hsize = ip->ip_hl * 4;
-	
-	/* verify packet length (on the wire) */
-	if (pkthdr->len - stackinfo->offset < ip_len) {
-		printf("[ipv4] truncated: %u bytes missing\n",
-			ip_len - (pkthdr->len - stackinfo->offset));
-		/* just a warning, don't return */
-	}
-	
-	/* calculate offset */
-	if ((offset = ip_off & IP_OFFMASK) != 0)
-		offset <<= 3;
-	
-	/* determine if first fragment or not */
-	if (offset) {
-		/* is not the first fragment */
-		printf("[ipv4-frag] ");
-	} else {
-		/* is the first/only fragment */
-		printf("[ipv4] ");
-	}
-	
-	/* determine protocol */
-	switch (ip->ip_p)
-	{
-	case IPPROTO_UDP:
-		printf("proto: udp ");
-		if (!offset)
-			/* first fragment handler */
-			handle_next = handle_udp;
-		/* we know enough, put it in the table */
-		udptable_update(ip->ip_src, pkthdr->len);
-		break;
-	case IPPROTO_TCP:
-		printf("proto: tcp ");
-		break;
-	case IPPROTO_ICMP:
-		printf("proto: icmp ");
-		break;
-	default:
-		printf("proto: ?:%u ", ip->ip_p);
-		break;
-	}
-	
-	/* print remaining info */
-	printf("src: %s ", inet_ntoa(ip->ip_src));
-	printf("dst: %s ", inet_ntoa(ip->ip_dst));
-	printf("len: %u off: %u%s\n",
-		ip_len, offset, (ip_off & IP_MF) ? " +" : "");
-	
-	/* check if header (w/ options) was captured completely */
-	if (pkthdr->caplen - stackinfo->offset < ip_hsize) {
-		printf("[ipv4] header options missing or truncated\n");
+	/* return if proto is not udp */
+	if (ip->ip_p != IPPROTO_UDP)
 		return;
-	}
 	
-	/* point to next layer */
-	stackinfo->offset += ip_hsize;
-	
-	/* handle the next layer */
-	if (handle_next)
-		handle_next((u_char *)stackinfo, pkthdr, packet);
+	/* we know enough, put it in the table */
+	udptable_update(ip->ip_src, pkthdr->len);
 	
 	return;
 }
-
-/*
- * Handle UDP protocol.
- */
-
-static void
-handle_udp(u_char *args, const struct pcap_pkthdr *pkthdr,
-	const u_char *packet)
-{
-	struct udphdr *udp;
-	struct stackinfo_t *stackinfo;
-	
-	/* extract stackinfo */
-	stackinfo = (struct stackinfo_t*)(args);
-	
-	/* check if header was captured completely */
-	if (pkthdr->caplen - stackinfo->offset < UDP_SIZE) {
-		printf("[udp] header missing or truncated\n");
-		return;
-	}
-	
-	/* extract udp header */
-	udp = (struct udphdr *)(packet + stackinfo->offset);
-	
-	/* print udp info */
-	printf("[udp] src-port: %u dst-port: %u len: %u\n",
-		ntohs(udp->uh_sport), ntohs(udp->uh_dport),
-		ntohs(udp->uh_ulen));
-	
-	/* point to next layer */
-	stackinfo->offset += UDP_SIZE;
-	
-	/* handle the next layer */
-	
-	return;
-}
-	
