@@ -1,0 +1,31 @@
+udpbuster - report udp traffic to detect udp floods
+===================================================
+
+I was just messing around with libpcap (see pcapfun on github).
+
+This tool is based upon pcapfun, but the idea was to report the total
+amount of udp packets and bytes from comming from each source address.
+
+This code compiles and is tested on OSX, Linux, FreeBSD and OpenBSD.
+Small note for FreeBSD/OpenBSD: you still need to use GNU make.
+
+You must provide a device (to capture the packets on) and a pcap filter.
+If you know don't know how a pcap filter looks like, check the manpage
+of tcpdump or pcap-filter, it's the same type of filter that you provide
+to tcpdump or wireshark/tshark, but as a single argument instead. It is
+a good idea to specify at least "ip and udp" as the filter, to avoid
+that every packet has to travel to userland and through this program.
+
+    ./udpbuster eth0 "ip and udp and port 666"
+
+It will open the device, set the filter on the device, checks the link
+type, then capture and handle the packets that match the filter, and
+after 10 seconds it will abort the loop and report the traffic.
+
+By default it will only track up to 100 source addresses, but you can
+edit the source and increase the table size. Note that it's a linear
+search to insert something in that table, so make sure your hardware
+can handle it for the amount of source addresses you want to track..
+
+Experiment with the source if you want it to do something else!
+
