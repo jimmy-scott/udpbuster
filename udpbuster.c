@@ -49,6 +49,8 @@
 #include <netinet/ether.h>
 #endif /* __linux__ */
 
+#include "udptable.h"
+
 #ifndef PCAP_NETMASK_UNKNOWN
 #define PCAP_NETMASK_UNKNOWN 0xffffffff
 #endif /* PCAP_NETMASK_UNKNOWN */
@@ -106,6 +108,12 @@ main(int argc, char **argv)
 	if (install_sigalrm(capt) != 0)
 		return EXIT_FAILURE;
 	
+	/* create udp table for max 100 source addresses */
+	if (udptable_init(100) != 0) {
+		perror("ERROR: Couldn't create udp table");
+		return EXIT_FAILURE;
+	}
+	
 	/* check and get link type */
 	if ((link_type = check_link_type(capt)) == -1)
 		return EXIT_FAILURE;
@@ -118,6 +126,9 @@ main(int argc, char **argv)
 	
 	/* capture and process packets */
 	pcap_loop(capt, 0, handle_packet, (u_char *)packetinfo);
+	
+	/* print the udp table entries */
+	udptable_list();
 	
 	return EXIT_SUCCESS;
 }
@@ -563,6 +574,8 @@ handle_ipv4(u_char *args, const struct pcap_pkthdr *pkthdr,
 		if (!offset)
 			/* first fragment handler */
 			handle_next = handle_udp;
+		/* we know enough, put it in the table */
+		udptable_update(ip->ip_src, pkthdr->len);
 		break;
 	case IPPROTO_TCP:
 		printf("proto: tcp ");
